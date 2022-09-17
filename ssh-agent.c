@@ -808,7 +808,8 @@ process_sign_request2(SocketEntry *e)
 		goto send;
 	}
 	if (sshkey_is_sk(id->key)) {
-		if (strncmp(id->key->sk_application, "ssh:", 4) != 0 &&
+		if (restrict_websafe &&
+		    strncmp(id->key->sk_application, "ssh:", 4) != 0 &&
 		    !check_websafe_message_contents(key, data)) {
 			/* error already logged */
 			goto send;
