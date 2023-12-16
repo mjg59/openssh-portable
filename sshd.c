@@ -804,6 +804,50 @@ notify_hostkeys(struct ssh *ssh)
 	sshbuf_free(buf);
 }
 
+/* Inform the client of any key revocations */
+static void
+notify_krl(struct ssh *ssh)
+{
+	struct sshbuf *krlbuf = NULL;
+	struct sshbuf *sigbuf = NULL;
+	int r;
+
+	if (options.revoked_host_keys_file == NULL)
+		return;
+
+	if (options.revoked_host_keys_sig_file == NULL)
+		xasprintf(&options.revoked_host_keys_sig_file, "%s.sig",
+			  options.revoked_host_keys_file);
+
+	r = sshbuf_load_file(options.revoked_host_keys_file, &krlbuf);
+	if (r) {
+		error_f("unable to read revoked host file %s: %d",
+			options.revoked_host_keys_file, r);
+		return;
+	}
+
+	r = sshbuf_load_file(options.revoked_host_keys_sig_file, &sigbuf);
+	if (r) {
+		error_f("unable to read revoked host signature file %s: %d",
+			options.revoked_host_keys_sig_file, r);
+		goto out;
+	}
+
+	if ((r = sshpkt_start(ssh, SSH2_MSG_GLOBAL_REQUEST)) != 0 ||
+	    (r = sshpkt_put_cstring(ssh, "krl-00@openssh.com")) != 0 ||
+	    (r = sshpkt_put_u8(ssh, 0)) != 0)
+		sshpkt_fatal(ssh, r, "%s: start request", __func__);
+	if ((r = sshpkt_put_stringb(ssh, krlbuf)) != 0)
+		sshpkt_fatal(ssh, r, "%s: append krl", __func__);
+	if ((r = sshpkt_put_stringb(ssh, sigbuf)) != 0)
+		sshpkt_fatal(ssh, r, "%s: append signature", __func__);
+	if ((r = sshpkt_send(ssh)) != 0)
+		sshpkt_fatal(ssh, r, "%s: send", __func__);
+out:
+	sshbuf_free(sigbuf);
+	sshbuf_free(krlbuf);
+}
+
 /*
  * returns 1 if connection should be dropped, 0 otherwise.
  * dropping starts at connection #max_startups_begin with a probability
@@ -2317,6 +2361,9 @@ main(int ac, char **av)
 
 	/* Try to send all our hostkeys to the client */
 	notify_hostkeys(ssh);
+
+	/* Send any KRL */
+	notify_krl(ssh);
 
 	/* Start session. */
 	do_authenticated(ssh, authctxt);

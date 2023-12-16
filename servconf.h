@@ -208,6 +208,8 @@ typedef struct {
 
 	char   *chroot_directory;
 	char   *revoked_keys_file;
+	char   *revoked_host_keys_file;
+	char   *revoked_host_keys_sig_file;
 	char   *trusted_user_ca_keys;
 	char   *authorized_keys_command;
 	char   *authorized_keys_command_user;
@@ -233,6 +235,7 @@ typedef struct {
 	u_int	num_channel_timeouts;
 
 	int	unused_connection_timeout;
+
 }       ServerOptions;
 
 /* Information about the incoming connection as used by Match */
@@ -270,6 +273,8 @@ TAILQ_HEAD(include_list, include_item);
 		M_CP_STROPT(banner); \
 		M_CP_STROPT(trusted_user_ca_keys); \
 		M_CP_STROPT(revoked_keys_file); \
+		M_CP_STROPT(revoked_host_keys_file); \
+		M_CP_STROPT(revoked_host_keys_sig_file); \
 		M_CP_STROPT(authorized_keys_command); \
 		M_CP_STROPT(authorized_keys_command_user); \
 		M_CP_STROPT(authorized_principals_file); \

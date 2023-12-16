@@ -182,6 +182,8 @@ initialize_server_options(ServerOptions *options)
 	options->authorized_keys_command = NULL;
 	options->authorized_keys_command_user = NULL;
 	options->revoked_keys_file = NULL;
+	options->revoked_host_keys_file = NULL;
+	options->revoked_host_keys_sig_file = NULL;
 	options->sk_provider = NULL;
 	options->trusted_user_ca_keys = NULL;
 	options->authorized_principals_file = NULL;
@@ -531,7 +533,8 @@ typedef enum {
 	sAllowStreamLocalForwarding, sFingerprintHash, sDisableForwarding,
 	sExposeAuthInfo, sRDomain, sPubkeyAuthOptions, sSecurityKeyProvider,
 	sRequiredRSASize, sChannelTimeout, sUnusedConnectionTimeout,
-	sDeprecated, sIgnore, sUnsupported
+	sRevokedHostKeys, sRevokedHostKeysSig, sDeprecated, sIgnore,
+	sUnsupported
 } ServerOpCodes;
 
 #define SSHCFG_GLOBAL		0x01	/* allowed in main section of config */
@@ -670,6 +673,8 @@ static struct {
 	{ "chrootdirectory", sChrootDirectory, SSHCFG_ALL },
 	{ "hostcertificate", sHostCertificate, SSHCFG_GLOBAL },
 	{ "revokedkeys", sRevokedKeys, SSHCFG_ALL },
+	{ "revokedhostkeys", sRevokedHostKeys, SSHCFG_ALL },
+	{ "revokedhostkeyssig", sRevokedHostKeysSig, SSHCFG_ALL },
 	{ "trustedusercakeys", sTrustedUserCAKeys, SSHCFG_ALL },
 	{ "authorizedprincipalsfile", sAuthorizedPrincipalsFile, SSHCFG_ALL },
 	{ "kexalgorithms", sKexAlgorithms, SSHCFG_GLOBAL },
@@ -2326,6 +2331,14 @@ process_server_config_line_depth(ServerOptions *options, char *line,
 		charptr = &options->revoked_keys_file;
 		goto parse_filename;
 
+	case sRevokedHostKeys:
+		charptr = &options->revoked_host_keys_file;
+		goto parse_filename;
+
+	case sRevokedHostKeysSig:
+		charptr = &options->revoked_host_keys_sig_file;
+		goto parse_filename;
+		
 	case sSecurityKeyProvider:
 		charptr = &options->sk_provider;
 		arg = argv_next(&ac, &av);
@@ -3095,6 +3108,7 @@ dump_config(ServerOptions *o)
 	dump_cfg_string(sChrootDirectory, o->chroot_directory);
 	dump_cfg_string(sTrustedUserCAKeys, o->trusted_user_ca_keys);
 	dump_cfg_string(sRevokedKeys, o->revoked_keys_file);
+	dump_cfg_string(sRevokedHostKeys, o->revoked_host_keys_file);
 	dump_cfg_string(sSecurityKeyProvider, o->sk_provider);
 	dump_cfg_string(sAuthorizedPrincipalsFile,
 	    o->authorized_principals_file);
