@@ -940,7 +940,7 @@ check_host_key(char *hostname, const struct ssh_conn_info *cinfo,
 	HostStatus host_status = -1, ip_status = -1;
 	struct sshkey *raw_key = NULL;
 	char *ip = NULL, *host = NULL;
-	char hostline[1000], *hostp, *fp, *ra;
+	char hostline[1000], *hostp, *fp, *cafp, *ra;
 	char msg[1024];
 	const char *type, *fail_reason = NULL;
 	const struct hostkey_entry *host_found = NULL, *ip_found = NULL;
@@ -949,6 +949,7 @@ check_host_key(char *hostname, const struct ssh_conn_info *cinfo,
 	int r, want_cert = sshkey_is_cert(host_key), host_ip_differ = 0;
 	int hostkey_trusted = 0; /* Known or explicitly accepted by user */
 	struct hostkeys *host_hostkeys, *ip_hostkeys;
+	struct sshkey *cert = NULL;
 	u_int i;
 
 	/*
@@ -1159,13 +1160,20 @@ check_host_key(char *hostname, const struct ssh_conn_info *cinfo,
 				    "type are already known for this host.");
 			} else
 				xextendf(&msg1, "", ".");
-
 			fp = sshkey_fingerprint(host_key,
 			    options.fingerprint_hash, SSH_FP_DEFAULT);
 			ra = sshkey_fingerprint(host_key,
 			    options.fingerprint_hash, SSH_FP_RANDOMART);
 			if (fp == NULL || ra == NULL)
 				fatal_f("sshkey_fingerprint failed");
+			if (cert) {
+				cafp = sshkey_fingerprint(cert->cert->signature_key,
+				     options.fingerprint_hash, SSH_FP_DEFAULT);
+				if (cafp == NULL)
+					fatal_f("sshkey_fingerprint failed");
+				xextendf(&msg1, "\n", "%s CA certificate fingerprint is %s.",
+				type, cafp);
+			}
 			xextendf(&msg1, "\n", "%s key fingerprint is %s.",
 			    type, fp);
 			if (options.visual_host_key)
@@ -1199,19 +1207,26 @@ check_host_key(char *hostname, const struct ssh_conn_info *cinfo,
 		 * If in "new" or "off" strict mode, add the key automatically
 		 * to the local known_hosts file.
 		 */
+		if (cert)
+			host_key = cert;
 		if (options.check_host_ip && ip_status == HOST_NEW) {
 			snprintf(hostline, sizeof(hostline), "%s,%s", host, ip);
 			hostp = hostline;
 			if (options.hash_known_hosts) {
 				/* Add hash of host and IP separately */
 				r = add_host_to_hostfile(user_hostfiles[0],
-				    host, host_key, options.hash_known_hosts) &&
-				    add_host_to_hostfile(user_hostfiles[0], ip,
-				    host_key, options.hash_known_hosts);
+				    host, host_key, options.hash_known_hosts);
+				/* Don't add an IP entry if we're writing out a cert */
+				if (!r && !cert) {
+				    r = add_host_to_hostfile(user_hostfiles[0], ip,
+				        host_key, options.hash_known_hosts);
+				}
 			} else {
-				/* Add unhashed "host,ip" */
+				if (cert)
+				  /* Certificates are host-specific */
+				  hostp = host;
 				r = add_host_to_hostfile(user_hostfiles[0],
-				    hostline, host_key,
+				    hostp, host_key,
 				    options.hash_known_hosts);
 			}
 		} else {
@@ -1423,6 +1438,7 @@ fail:
 			fatal_fr(r, "decode key");
 		if ((r = sshkey_drop_cert(raw_key)) != 0)
 			fatal_r(r, "Couldn't drop certificate");
+		cert = host_key;
 		host_key = raw_key;
 		goto retry;
 	}

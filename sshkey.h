@@ -211,6 +211,7 @@ int		 sshkey_fingerprint_raw(const struct sshkey *k,
 const char	*sshkey_type(const struct sshkey *);
 const char	*sshkey_cert_type(const struct sshkey *);
 int		 sshkey_format_text(const struct sshkey *, struct sshbuf *);
+int		 sshca_write(const struct sshkey *, FILE *);
 int		 sshkey_write(const struct sshkey *, FILE *);
 int		 sshkey_read(struct sshkey *, char **);
 u_int		 sshkey_size(const struct sshkey *);

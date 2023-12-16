@@ -437,11 +437,14 @@ static int
 write_host_entry(FILE *f, const char *host, const char *ip,
     const struct sshkey *key, int store_hash)
 {
-	int r, success = 0;
+	int r, success = 0, cert = sshkey_is_cert(key);
 	char *hashed_host = NULL, *lhost;
 
 	lhost = xstrdup(host);
 	lowercase(lhost);
+
+	if (cert)
+		fprintf(f, "%s ", CA_MARKER);
 
 	if (store_hash) {
 		if ((hashed_host = host_hash(lhost, NULL, 0)) == NULL) {
@@ -457,7 +460,9 @@ write_host_entry(FILE *f, const char *host, const char *ip,
 	}
 	free(hashed_host);
 	free(lhost);
-	if ((r = sshkey_write(key, f)) == 0)
+	if ((cert && (r = sshca_write(key, f)) == 0))
+		success = 1;
+	else if ((r = sshkey_write(key, f) == 0))
 		success = 1;
 	else
 		error_fr(r, "sshkey_write");

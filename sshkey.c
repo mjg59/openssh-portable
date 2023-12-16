@@ -1288,6 +1288,12 @@ sshkey_format_text(const struct sshkey *key, struct sshbuf *b)
 }
 
 int
+sshca_write(const struct sshkey *key, FILE *f)
+{
+	return sshkey_write(key->cert->signature_key, f);
+}
+
+int
 sshkey_write(const struct sshkey *key, FILE *f)
 {
 	struct sshbuf *b = NULL;
