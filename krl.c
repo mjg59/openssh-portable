@@ -212,9 +212,9 @@ ssh_krl_set_comment(struct ssh_krl *krl, const char *comment)
  * Find the revoked_certs struct for a CA key. If allow_create is set then
  * create a new one in the tree if one did not exist already.
  */
-static int
-revoked_certs_for_ca_key(struct ssh_krl *krl, const struct sshkey *ca_key,
-    struct revoked_certs **rcp, int allow_create)
+int
+ssh_krl_revoked_certs_for_ca_key(struct ssh_krl *krl,
+    const struct sshkey *ca_key, struct revoked_certs **rcp, int allow_create)
 {
 	struct revoked_certs *rc;
 	int r;
@@ -332,7 +332,7 @@ ssh_krl_revoke_cert_by_serial_range(struct ssh_krl *krl,
 
 	if (lo > hi || lo == 0)
 		return SSH_ERR_INVALID_ARGUMENT;
-	if ((r = revoked_certs_for_ca_key(krl, ca_key, &rc, 1)) != 0)
+	if ((r = ssh_krl_revoked_certs_for_ca_key(krl, ca_key, &rc, 1)) != 0)
 		return r;
 	return insert_serial_range(&rc->revoked_serials, lo, hi);
 }
@@ -345,7 +345,7 @@ ssh_krl_revoke_cert_by_key_id(struct ssh_krl *krl, const struct sshkey *ca_key,
 	struct revoked_certs *rc;
 	int r;
 
-	if ((r = revoked_certs_for_ca_key(krl, ca_key, &rc, 1)) != 0)
+	if ((r = ssh_krl_revoked_certs_for_ca_key(krl, ca_key, &rc, 1)) != 0)
 		return r;
 
 	KRL_DBG(("revoke %s", key_id));
@@ -359,6 +359,30 @@ ssh_krl_revoke_cert_by_key_id(struct ssh_krl *krl, const struct sshkey *ca_key,
 		free(rki->key_id);
 		free(rki);
 	}
+	return 0;
+}
+
+int
+ssh_krl_revoke_certs(struct ssh_krl *krl, const struct sshkey *ca_key,
+		     struct revoked_certs *certs)
+{
+	struct revoked_key_id *rki;
+	struct revoked_serial *rs;
+	int r;
+
+	RB_FOREACH(rs, revoked_serial_tree, &certs->revoked_serials) {
+		if ((r = ssh_krl_revoke_cert_by_serial_range(krl, ca_key,
+						      rs->lo, rs->hi)) != 0) {
+			return r;
+		}
+	}
+	RB_FOREACH(rki, revoked_key_id_tree, &certs->revoked_key_ids) {
+		if ((r = ssh_krl_revoke_cert_by_key_id(krl, ca_key,
+						       rki->key_id)) != 0) {
+			return r;
+		}
+	}
+
 	return 0;
 }
 
@@ -1230,15 +1254,15 @@ is_key_revoked(struct ssh_krl *krl, const struct sshkey *key)
 		return 0;
 
 	/* Check cert revocation for the specified CA */
-	if ((r = revoked_certs_for_ca_key(krl, key->cert->signature_key,
-	    &rc, 0)) != 0)
+	if ((r = ssh_krl_revoked_certs_for_ca_key(krl,
+	    key->cert->signature_key, &rc, 0)) != 0)
 		return r;
 	if (rc != NULL) {
 		if ((r = is_cert_revoked(key, rc)) != 0)
 			return r;
 	}
 	/* Check cert revocation for the wildcard CA */
-	if ((r = revoked_certs_for_ca_key(krl, NULL, &rc, 0)) != 0)
+	if ((r = ssh_krl_revoked_certs_for_ca_key(krl, NULL, &rc, 0)) != 0)
 		return r;
 	if (rc != NULL) {
 		if ((r = is_cert_revoked(key, rc)) != 0)
@@ -1267,10 +1291,30 @@ ssh_krl_check_key(struct ssh_krl *krl, const struct sshkey *key)
 }
 
 int
-ssh_krl_file_contains_key(const char *path, const struct sshkey *key)
+ssh_krl_to_file(const char *path, struct ssh_krl *krl)
+{
+	int oerrno = 0, r;
+	struct sshbuf *kbuf;
+
+	if ((kbuf = sshbuf_new()) == NULL)
+		return SSH_ERR_ALLOC_FAIL;
+	if ((r = ssh_krl_to_blob(krl, kbuf)) != 0)
+		goto out;
+	if ((r = sshbuf_write_file(path, kbuf)) != 0) {
+		oerrno = errno;
+		goto out;
+	}
+out:
+	sshbuf_free(kbuf);
+	if (r != 0)
+		errno = oerrno;
+	return r;
+}
+
+int
+ssh_krl_from_file(const char *path, struct ssh_krl **krl)
 {
 	struct sshbuf *krlbuf = NULL;
-	struct ssh_krl *krl = NULL;
 	int oerrno = 0, r;
 
 	if (path == NULL)
@@ -1279,12 +1323,29 @@ ssh_krl_file_contains_key(const char *path, const struct sshkey *key)
 		oerrno = errno;
 		goto out;
 	}
-	if ((r = ssh_krl_from_blob(krlbuf, &krl)) != 0)
-		goto out;
+	r = ssh_krl_from_blob(krlbuf, krl);
+out:
+	sshbuf_free(krlbuf);
+	if (r != 0)
+		errno = oerrno;
+	return r;
+}
+
+int
+ssh_krl_file_contains_key(const char *path, const struct sshkey *key)
+{
+	struct ssh_krl *krl = NULL;
+	int oerrno = 0, r;
+
+	if (path == NULL)
+		return 0;
+
 	debug2_f("checking KRL %s", path);
+	if ((r = ssh_krl_from_file(path, &krl)) != 0)
+		goto out;
+
 	r = ssh_krl_check_key(krl, key);
  out:
-	sshbuf_free(krlbuf);
 	ssh_krl_free(krl);
 	if (r != 0)
 		errno = oerrno;

@@ -62,6 +62,9 @@
 #include "includes.h"
 
 #include <sys/types.h>
+#ifdef HAVE_SYS_FILE_H
+# include <sys/file.h>
+#endif
 #include <sys/ioctl.h>
 #ifdef HAVE_SYS_STAT_H
 # include <sys/stat.h>
@@ -73,6 +76,7 @@
 
 #include <ctype.h>
 #include <errno.h>
+#include <fcntl.h>
 #ifdef HAVE_PATHS_H
 #include <paths.h>
 #endif
@@ -114,6 +118,8 @@
 #include "msg.h"
 #include "ssherr.h"
 #include "hostfile.h"
+#include "krl.h"
+#include "sshsig.h"
 
 /* Permitted RSA signature algorithms for UpdateHostkeys proofs */
 #define HOSTKEY_PROOF_RSA_ALGS	"rsa-sha2-512,rsa-sha2-256"
@@ -2671,6 +2677,101 @@ client_input_hostkeys(struct ssh *ssh)
 	return 1;
 }
 
+/*
+ * Handle krl-00@openssh.com global request to inform the client of all
+ * the server's revoked hostkeys.
+ */
+static int
+client_input_krl(struct ssh *ssh)
+{
+	int fd = -1;
+	struct ssh_krl *krl = NULL;
+	struct ssh_krl *clientkrl = NULL;
+	struct sshbuf *krlbuf = NULL;
+	struct sshbuf *clientkrlbuf = NULL;
+	struct sshbuf *sigbuf = NULL;
+	int r;
+	struct revoked_certs *host_revoked_certs;
+	static int krl_seen = 0; /* XXX use struct ssh */
+
+	if (!ssh->cakey)
+		fatal_f("server sent KRL data without providing a certificate");
+	if (krl_seen)
+		fatal_f("server already sent krl");
+	if (!can_update_hostkeys())
+		return 1;
+	krl_seen = 1;
+
+	if ((r = sshpkt_getb_froms(ssh, &krlbuf)) != 0) {
+		error_fr(r, "obtain krl");
+		goto out;
+	}
+
+	if ((r = sshpkt_getb_froms(ssh, &sigbuf)) != 0) {
+		error_fr(r, "obtain signature");
+		goto out;
+	}
+
+	if ((r = sshsig_verifyb(sigbuf, krlbuf, KRL_SIG_NAMESPACE, &ssh->cakey,
+				NULL)) != 0) {
+		error_fr(r, "validate signature");
+		goto out;
+	}
+
+	if ((r = ssh_krl_from_blob(krlbuf, &krl)) != 0) {
+		error_fr(r, "decode KRL");
+		goto out;
+	}
+
+	if ((r = ssh_krl_revoked_certs_for_ca_key(krl, ssh->cakey,
+					   &host_revoked_certs, 0)) != 0) {
+		error_fr(r, "look for revoked CA key");
+		goto out;
+	}
+
+	if (host_revoked_certs == NULL)
+		/* No revocation entries for the server CA */
+		goto out;
+
+	/* Read KRL file from disk */
+	fd = open(options.autorevoked_certs, O_RDWR|O_CREAT, 0600);
+	if (fd < 0) {
+		error_fr(errno, "opening autorevoked certs file");
+		goto out;
+	}
+	if ((r = flock(fd, LOCK_EX)) != 0) {
+		error_fr(r, "locking autorevoked certs file");
+		goto out;
+	}
+
+	if ((r = ssh_krl_from_file(options.autorevoked_certs, &clientkrl)) != 0) {
+		error_fr(r, "reading autorevoked certs file");
+		goto out;
+	}
+
+	if ((r = ssh_krl_revoke_certs(clientkrl, ssh->cakey, host_revoked_certs)) != 0) {
+		error_fr(r, "merging revoked certs into krl");
+		goto out;
+	}
+
+	/* Write KRL back to disk */
+	if ((r = ssh_krl_to_file(options.autorevoked_certs, clientkrl)) != 0) {
+		error_fr(r, "writing new krl to disk");
+		goto out;
+	}
+out:
+	if (fd >= 0) {
+		flock(fd, LOCK_UN);
+		close(fd);
+	}
+	ssh_krl_free(krl);
+	ssh_krl_free(clientkrl);
+	sshbuf_free(sigbuf);
+	sshbuf_free(krlbuf);
+	sshbuf_free(clientkrlbuf);
+	return r;
+}
+
 static int
 client_input_global_request(int type, u_int32_t seq, struct ssh *ssh)
 {
@@ -2685,6 +2786,8 @@ client_input_global_request(int type, u_int32_t seq, struct ssh *ssh)
 	    rtype, want_reply);
 	if (strcmp(rtype, "hostkeys-00@openssh.com") == 0)
 		success = client_input_hostkeys(ssh);
+	if (strcmp(rtype, "krl-00@openssh.com") == 0)
+		success = client_input_krl(ssh);
 	if (want_reply) {
 		if ((r = sshpkt_start(ssh, success ? SSH2_MSG_REQUEST_SUCCESS :
 		    SSH2_MSG_REQUEST_FAILURE)) != 0 ||

@@ -179,7 +179,8 @@ typedef enum {
 	oPubkeyAcceptedAlgorithms, oCASignatureAlgorithms, oProxyJump,
 	oSecurityKeyProvider, oKnownHostsCommand, oRequiredRSASize,
 	oEnableEscapeCommandline, oObscureKeystrokeTiming, oChannelTimeout,
-	oIgnore, oIgnoredUnknownOption, oDeprecated, oUnsupported
+	oAutorevokedCerts, oIgnore, oIgnoredUnknownOption, oDeprecated,
+	oUnsupported
 } OpCodes;
 
 /* Textual representations of the tokens. */
@@ -329,6 +330,7 @@ static struct {
 	{ "enableescapecommandline", oEnableEscapeCommandline },
 	{ "obscurekeystroketiming", oObscureKeystrokeTiming },
 	{ "channeltimeout", oChannelTimeout },
+	{ "autorevokedcerts", oAutorevokedCerts },
 
 	{ NULL, oBadOption }
 };
@@ -2352,6 +2354,9 @@ parse_pubkey_algos:
 			    &options->num_channel_timeouts, arg);
 		}
 		break;
+	case oAutorevokedCerts:
+		charptr = &options->autorevoked_certs;
+		goto parse_string;
 
 	case oDeprecated:
 		debug("%s line %d: Deprecated option \"%s\"",
@@ -2812,6 +2817,8 @@ fill_default_options(Options * options)
 		    SSH_KEYSTROKE_DEFAULT_INTERVAL_MS;
 	}
 
+	if (!options->autorevoked_certs)
+		options->autorevoked_certs = xstrdup(_PATH_SSH_USER_AUTOREVOKED_CERTS);
 	/* Expand KEX name lists */
 	all_cipher = cipher_alg_list(',', 0);
 	all_mac = mac_alg_list(',');

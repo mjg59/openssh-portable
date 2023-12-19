@@ -1255,6 +1255,9 @@ kex_verify_host_key(struct ssh *ssh, struct sshkey *server_host_key)
 		return SSH_ERR_KEY_TYPE_MISMATCH;
 	if (kex->verify_host_key(server_host_key, ssh) == -1)
 		return  SSH_ERR_SIGNATURE_INVALID;
+
+	if (sshkey_is_cert(server_host_key))
+		ssh->cakey = server_host_key->cert->signature_key;
 	return 0;
 }
 

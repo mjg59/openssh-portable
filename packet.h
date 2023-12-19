@@ -86,6 +86,9 @@ struct ssh {
 
 	/* APP data */
 	void *app_data;
+
+	/* CA key associated with this session, if any */
+	struct sshkey *cakey;
 };
 
 typedef int (ssh_packet_hook_fn)(struct ssh *, struct sshbuf *,

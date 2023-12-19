@@ -100,6 +100,7 @@ typedef struct {
 	int	add_keys_to_agent;
 	int	add_keys_to_agent_lifespan;
 	char   *identity_agent;		/* Optional path to ssh-agent socket */
+	char   *autorevoked_certs;
 
 	/* Local TCP/IP forward requests. */
 	int     num_local_forwards;

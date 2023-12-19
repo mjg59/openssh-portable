@@ -1561,6 +1561,15 @@ main(int ac, char **av)
 		}
 	}
 
+	if (options.autorevoked_certs) {
+		cp = tilde_expand_filename(options.autorevoked_certs, getuid());
+		if (strcmp(cp, options.autorevoked_certs) != 0)
+			debug3("expanded RemoteForward listen path "
+			       "'%s' -> '%s'", options.autorevoked_certs, cp);
+		free(options.autorevoked_certs);
+		options.autorevoked_certs = cp;
+	}
+
 	/*
 	 * If hostname canonicalisation was not enabled, then we may not
 	 * have yet resolved the hostname. Do so now.

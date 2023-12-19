@@ -69,6 +69,11 @@
 #define _PATH_SSH_USER_HOSTFILE2	"~/" _PATH_SSH_USER_DIR "/known_hosts2"
 
 /*
+ * Per-user file containing auto-updated revocation entries.
+ */
+#define _PATH_SSH_USER_AUTOREVOKED_CERTS "~/" _PATH_SSH_USER_DIR "/autorevoked_certs"
+
+/*
  * Name of the default file containing client-side authentication key. This
  * file should only be readable by the user him/herself.
  */
