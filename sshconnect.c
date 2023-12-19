@@ -1521,6 +1521,27 @@ verify_host_key(char *host, struct sockaddr *hostaddr, struct sshkey *host_key,
 		}
 	}
 
+	/* Check in AutorevokedCerts file if specified */
+	if (options.autorevoked_certs != NULL) {
+		r = sshkey_check_revoked(host_key, options.autorevoked_certs);
+		switch (r) {
+		case 0:
+			break; /* not revoked */
+		case SSH_ERR_KEY_REVOKED:
+			error("Host key %s %s revoked by file %s",
+			    sshkey_type(host_key), fp,
+			    options.autorevoked_certs);
+			r = -1;
+			goto out;
+		default:
+			error_r(r, "Error checking host key %s %s in "
+			    "revoked keys file %s", sshkey_type(host_key),
+			    fp, options.autorevoked_certs);
+			r = -1;
+			goto out;
+		}
+	}
+
 	if (options.verify_host_key_dns) {
 		/*
 		 * XXX certs are not yet supported for DNS, so downgrade
